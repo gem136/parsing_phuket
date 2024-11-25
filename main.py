@@ -1,4 +1,5 @@
 import json
+import re
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -9,8 +10,6 @@ from selenium.webdriver.common.action_chains import ActionChains
 from dateutil.parser import parse
 from datetime import timedelta, datetime
 import time
-
-from test import driver
 
 
 class VillaParser:
@@ -80,16 +79,23 @@ class VillaParser:
     def check_total(self,url,i):
         self.driver.get(url)
         print(f"Ожидаем доступности первой кнопки на {url}...") #current-post-id
-        id = WebDriverWait(self.driver, 3).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, ".current-post-id"))
-        )
+        try:
+            # Поиск элемента по XPath
+            element = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, '//*[@id="current-post-id"]'))
+            )
+            # Получение текста через JavaScript
+            value = self.driver.execute_script("return arguments[0].textContent;", element)
+            print("Найденное значение:", value.strip())  # Убираем лишние пробелы
+            id = int(value.strip())
+        except Exception as e:
+            print("Ошибка:", e)
         # Ожидание доступности кнопки
         button = WebDriverWait(self.driver, 3).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, ".date-container.left"))
         )
         button.click()
         print("Первая кнопка нажата.")
-        print(i)
         if i == 1:
             year = WebDriverWait(self.driver, 20).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, ".numInput.cur-year"))
@@ -135,13 +141,6 @@ class VillaParser:
                                                                    f"//span[contains(@aria-label, '{second_date.strftime('%B')}') and contains(@aria-label, '{second_date.day}') and contains(@aria-label, '{second_date.year}')]")
                     second_date_element.click()
                     time.sleep(1)
-                    total_price_element = WebDriverWait(self.driver, 3).until(
-                        EC.visibility_of_element_located((By.XPATH, '//*[@id="total_price"]'))
-                    )
-
-                    # Извлекаем и выводим значение цены
-                    total_price = total_price_element.text
-                    print(total_price)
                 else:
                     print(f"Доступность более чем через 7 дней, выбираем через 7 дней.")
                     first_date_element = self.driver.find_elements(By.XPATH,
@@ -158,13 +157,6 @@ class VillaParser:
                                                               f"//span[contains(@aria-label, '{month_name}') and contains(@aria-label, '{day}') and contains(@aria-label, '{year}')]")
                     future_element.click()
                     time.sleep(1)
-                    total_price_element = WebDriverWait(self.driver, 3).until(
-                        EC.visibility_of_element_located((By.XPATH, '//*[@id="total_price"]'))
-                    )
-                    # Извлекаем и выводим значение цены
-                    total_price = total_price_element.text
-                    print(total_price)
-
             else:
                 print("Элемент 'available-end' не найден. Конец доступности больше 2 месяцев.")
         else:
@@ -204,14 +196,6 @@ class VillaParser:
 
                         second_date_element.click()
                         time.sleep(1)
-                        total_price_element = WebDriverWait(self.driver, 3).until(
-                            EC.visibility_of_element_located((By.XPATH, '//*[@id="total_price"]'))
-                        )
-                        self.scroll_to_element(total_price_element)
-
-                        # Извлекаем и выводим значение цены
-                        total_price = total_price_element.text
-                        print(total_price)
                     else:
                         print(f"Доступность более чем через 7 дней, выбираем через 7 дней.")
                         first_date = available_start_date_obj
@@ -232,12 +216,6 @@ class VillaParser:
                                                                   f"//span[contains(@aria-label, '{month_name}') and contains(@aria-label, '{day}') and contains(@aria-label, '{year}')]")
 
                         future_element.click()
-                        time.sleep(1)
-                        total_price_element = WebDriverWait(self.driver, 3).until(
-                            EC.visibility_of_element_located((By.XPATH, '//*[@id="total_price"]'))
-                        )
-                        total_price = total_price_element.get_attribute('textContent').strip()
-                        print(total_price)
                 else:
                     print("Элемент 'available-end' не найден. Конец доступности больше 2 месяцев.")
             else:
@@ -257,6 +235,8 @@ class VillaParser:
                     target_day = target_date.day
                     target_month = target_date.strftime("%B")
                     target_year = target_date.year
+                    first_date = target_date
+                    second_date = end_date
 
                     # Ищем future_element и first_element
                     future_element = self.driver.find_element(By.XPATH,
@@ -272,14 +252,6 @@ class VillaParser:
                     future_element.click()
 
                     time.sleep(2)
-                    try:
-                        total_price_element = WebDriverWait(self.driver, 3).until(
-                            EC.visibility_of_element_located((By.XPATH, '//*[@id="total_price"]'))
-                        )
-                        total_price = total_price_element.get_attribute('textContent').strip()
-                        print(total_price)
-                    except Exception as e:
-                        print("Total не удалось найти")
 
                 else:
                     print("Доступный элемент 'end' не найден.")
@@ -291,26 +263,58 @@ class VillaParser:
 
                     # Задаём два дня: 1 и 8
                     days_to_check = [1, 8]
+                    first_date = None
+                    second_date = None
 
-                    for day in days_to_check:
-                        print(f"Ищем дату: {day} {current_month} {current_year+1}")
+                    for i, day in enumerate(days_to_check):
+                        print(f"Ищем дату: {day} {current_month} {current_year + 1}")
                         try:
                             # Поиск элемента по XPath
                             element = self.driver.find_element(By.XPATH,
-                                                               f"//span[contains(@aria-label, '{current_month}') and contains(@aria-label, '{day}') and contains(@aria-label, '{current_year+1}')]"
+                                                               f"//span[contains(@aria-label, '{current_month}') and contains(@aria-label, '{day}') and contains(@aria-label, '{current_year + 1}')]"
                                                                )
                             element.click()
+
+                            # Сохраняем первую дату
+                            if first_date is None:
+                                first_date = datetime.strptime(f"{current_month} {day}, {current_year + 1}",
+                                                               "%B %d, %Y")
+                                print(f"Первая дата сохранена: {first_date}")
+                            # Сохраняем вторую дату
+                            elif second_date is None:
+                                second_date = datetime.strptime(f"{current_month} {day}, {current_year + 1}",
+                                                                "%B %d, %Y")
+                                print(f"Вторая дата сохранена: {second_date}")
+                                break  # Прерываем цикл, если обе даты сохранены
+
                         except Exception as e:
-                            print(f"Элемент для {day} {current_month} {current_year+1} не найден. Ошибка: {e}")
+                            print(f"Элемент для {day} {current_month} {current_year + 1} не найден. Ошибка: {e}")
                     time.sleep(2)
-                    try:
-                        total_price_element = WebDriverWait(self.driver, 3).until(
-                            EC.visibility_of_element_located((By.XPATH, '//*[@id="total_price"]'))
-                        )
-                        total = total_price_element.get_attribute('textContent').strip()
-                    except Exception as e:
-                        print("Total не удалось найти")
-                        total = "Error"
+        time.sleep(1)
+        try:
+            total_price_element = WebDriverWait(self.driver, 3).until(
+                EC.visibility_of_element_located((By.XPATH, '//*[@id="total_price"]'))
+            )
+            total = total_price_element.get_attribute('textContent').strip()
+        except Exception as e:
+            print("Total не удалось найти")
+            total = "Error"
+        try:
+            try:
+                date = f"{first_date} {second_date}"
+            except:
+                date = "Error"
+            if total and id:
+                print(total)
+                print(id)
+                total = re.sub(r'\s', '', total)
+                JsonDump.get_data_and_save(id, date, total)
+            else:
+                print("Не удалось сохранить")
+        except Exception as e:
+            print(e)
+
+
 
 
     def scroll_to_element(self, element):
@@ -319,7 +323,7 @@ class VillaParser:
 
 
 class JsonDump:
-    def __init__(self, json_file='json_dump.json'):
+    def __init__(self, json_file=f'json_dump_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.json'):
         self.json_file = json_file  # Указываем имя файла для сохранения данных
 
     def save_to_file(self, data):
@@ -343,11 +347,7 @@ class JsonDump:
     def get_data_and_save(self, post_id, date, total):
         data = {"items": []}
 
-        # Проверяем, можно ли преобразовать total в число, если нет - ставим "ошибка"
-        try:
-            total = float(total)
-        except ValueError:
-            total = "ошибка"
+
 
         # Добавляем данные в список
         data["items"].append({
@@ -364,7 +364,7 @@ class JsonDump:
 if __name__ == "__main__":
     base_url = "https://booking.phuket-concierge.com/luxury-villas-in-phuket/?jsf=jet-engine:all-villas&pagenum="
     villa_parser = VillaParser(base_url)
-    JsonDump = JsonDump(driver)
+    JsonDump = JsonDump()
     try:
         all_villa_links = villa_parser.parse_all_pages()
         print("Все ссылки на виллы:", all_villa_links)
